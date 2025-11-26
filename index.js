@@ -117,22 +117,29 @@ client.on("guildMemberAdd", async (member) => {
     return;
   }
 
+  const guild = member.guild;
+
+  // Give "Participants" role immediately
+  const participantsRole = guild.roles.cache.find(r => r.name === "Participants");
+  if (participantsRole && !member.roles.cache.has(participantsRole.id)) {
+    await member.roles.add(participantsRole);
+    console.log(`✅ ${member.user.tag} → Participants role added`);
+  }
+
   const users = [];
 
   fs.createReadStream(CSV_FILE)
     .pipe(csv())
     .on("data", (row) => users.push(row))
     .on("end", async () => {
-      let user;
-      
-      user = users.find(u => u.discord_id === member.id);
-      
-      if(!user){
-        user = users.find(u =>
-  String(u.discord_id || "").toLowerCase().trim() === member.user.username.toLowerCase()
-);}
 
-      
+      // Check by discord_id OR username
+      const user = users.find(u =>
+        String(u.discord_id || "").trim() === member.id ||
+        String(u.discord_id || "").toLowerCase().trim() === member.user.username.toLowerCase()
+      );
+
+      // ❌ Not found → kick
       if (!user) {
         try {
           await member.send(
@@ -146,7 +153,7 @@ client.on("guildMemberAdd", async (member) => {
 
         try {
           await member.kick("User not found in whitelist CSV");
-          console.log(`❌ ${member.user.tag} was kicked (not in whitelist).`);
+          console.log(`❌ ${member.user.tag} kicked (not in whitelist).`);
         } catch (err) {
           console.log("❌ Kick failed:", err.message);
         }
@@ -154,13 +161,9 @@ client.on("guildMemberAdd", async (member) => {
         return;
       }
 
-      // ======================================================
-      // ✅ 2. USER FOUND → ASSIGN ROLE FROM SAME ROW
-      // ======================================================
-      const guild = member.guild;
-
-      const advancedRole = guild.roles.cache.find(r => r.name === "Advanced");
-      const beginnerRole = guild.roles.cache.find(r => r.name === "Beginners");
+      // ✅ User found → assign role from CSV row
+      const advancedRole = guild.roles.cache.find(r => r.name === "[ Advanced ]");
+      const beginnerRole = guild.roles.cache.find(r => r.name === "[ Beginners ]");
       const idleRole = guild.roles.cache.find(r => r.name === "Idle");
 
       if (!advancedRole || !beginnerRole || !idleRole) {
@@ -168,19 +171,17 @@ client.on("guildMemberAdd", async (member) => {
         return;
       }
 
-      // Clean roles first
-      await member.roles.remove([advancedRole, beginnerRole, idleRole]);
-
       const isAdvanced = String(user.advanced).toLowerCase() === "true";
       const isBeginner = String(user.beginner).toLowerCase() === "true";
 
-      if (isAdvanced) {
+      // Add roles without removing existing ones
+      if (isAdvanced && !member.roles.cache.has(advancedRole.id)) {
         await member.roles.add(advancedRole);
         console.log(`✅ ${member.user.tag} → Advanced`);
-      } else if (isBeginner) {
+      } else if (isBeginner && !member.roles.cache.has(beginnerRole.id)) {
         await member.roles.add(beginnerRole);
         console.log(`✅ ${member.user.tag} → Beginner`);
-      } else {
+      } else if (!isAdvanced && !isBeginner && !member.roles.cache.has(idleRole.id)) {
         await member.roles.add(idleRole);
         console.log(`✅ ${member.user.tag} → Idle`);
       }
